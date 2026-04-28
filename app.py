@@ -30,27 +30,35 @@ if 'my_feeds' not in st.session_state:
         "EdgeUp RSS": "https://edgeup.asus.com/feed/"
     }
 
-with st.sidebar.expander("➕ Add New Source"):
+with st.sidebar.expander("➕ Add/Edit Sources"):
     new_name = st.text_input("Source Name")
     new_url = st.text_input("RSS URL")
     if st.button("Add to List"):
         if new_name and new_url:
             st.session_state.my_feeds[new_name] = new_url
             st.rerun()
+    
+    st.markdown("---")
+    source_to_delete = st.selectbox("Remove a source", options=[""] + list(st.session_state.my_feeds.keys()))
+    if st.button("Delete Selected") and source_to_delete:
+        del st.session_state.my_feeds[source_to_delete]
+        st.rerun()
 
-# --- SIDEBAR: DISPLAY SETTINGS ---
+# --- SIDEBAR: ADVANCED FILTERING ---
 st.sidebar.markdown("---")
-st.sidebar.title("🎨 Display Settings")
-
-view_mode = st.sidebar.radio("Layout View", ["List", "Grid"])
-limit = st.sidebar.slider("Number of articles to pull", 5, 100, 20)
+st.sidebar.title("🚫 Content Filters")
+exclude_keywords = st.sidebar.text_input("Exclude URLs containing (comma separated)", "blog")
 
 st.sidebar.markdown("---")
+st.sidebar.title("🎨 Display")
+view_mode = st.sidebar.radio("Layout", ["List", "Grid"])
+limit = st.sidebar.slider("Article Limit", 5, 100, 20)
+
 st.sidebar.title("🔍 Search")
 search_query = st.sidebar.text_input("Search keywords", "").lower()
 
 selected_sources = st.sidebar.multiselect(
-    "Filter View", 
+    "Active Sources", 
     options=list(st.session_state.my_feeds.keys()), 
     default=list(st.session_state.my_feeds.keys())
 )
@@ -59,15 +67,22 @@ st.title("🗂️ Universal News Aggregator")
 
 # --- FETCH & COMBINE ---
 all_entries = []
+exclude_list = [x.strip().lower() for x in exclude_keywords.split(",") if x.strip()]
+
 with st.spinner('Syncing...'):
     for name, url in st.session_state.my_feeds.items():
         if name in selected_sources:
             try:
                 feed = feedparser.parse(url)
                 for entry in feed.entries:
-                    entry['source_label'] = name
-                    entry['detected_image'] = extract_image(entry)
-                    all_entries.append(entry)
+                    # --- NEW EXCLUSION LOGIC ---
+                    # Checks if any exclude keyword is in the link URL
+                    is_excluded = any(excl in entry.link.lower() for excl in exclude_list)
+                    
+                    if not is_excluded:
+                        entry['source_label'] = name
+                        entry['detected_image'] = extract_image(entry)
+                        all_entries.append(entry)
             except:
                 st.sidebar.error(f"Error: {name}")
 
@@ -79,27 +94,24 @@ filtered = [
 ]
 display_entries = filtered[:limit]
 
-# --- SIDEBAR: EXPORT XML ---
+# --- SIDEBAR: EXPORT ---
 st.sidebar.markdown("---")
 if st.sidebar.button("📦 Build XML Feed"):
     fg = FeedGenerator()
     fg.title("Custom Exported Feed")
-    fg.description("Articles with embedded images")
+    fg.description("Filtered results with images")
     for entry in display_entries:
         fe = fg.add_entry()
         fe.title(entry.title)
         fe.link(href=entry.link)
         if entry.get('detected_image'):
             fe.enclosure(entry['detected_image'], '0', 'image/jpeg')
-    
     rss_xml = fg.rss_str(pretty=True)
-    st.sidebar.download_button("📥 Download XML", data=rss_xml, file_name="feed.xml")
+    st.sidebar.download_button("📥 Download XML", data=rss_xml, file_name="filtered_feed.xml")
 
-# --- MAIN DISPLAY ENGINE ---
-st.write(f"Showing **{len(display_entries)}** articles.")
-
+# --- DISPLAY ENGINE ---
 if not display_entries:
-    st.info("No articles found.")
+    st.info("No articles found matching filters.")
 
 elif view_mode == "List":
     for entry in display_entries:
@@ -116,11 +128,13 @@ elif view_mode == "List":
             st.markdown("---")
 
 else: # Grid View
-    cols = st.columns(3) # 3 columns per row
-    for i, entry in enumerate(display_entries):
-        with cols[i % 3]:
-            if entry['detected_image']:
-                st.image(entry['detected_image'], use_container_width=True)
-            st.markdown(f"**[{entry.title}]({entry.link})**")
-            st.caption(f"{entry.source_label}")
-            st.markdown("---")
+    rows = [display_entries[i:i+3] for i in range(0, len(display_entries), 3)]
+    for row in rows:
+        cols = st.columns(3)
+        for i, entry in enumerate(row):
+            with cols[i]:
+                if entry['detected_image']:
+                    st.image(entry['detected_image'], use_container_width=True)
+                st.markdown(f"**[{entry.title}]({entry.link})**")
+                st.caption(f"{entry.source_label} | {entry.get('published', 'N/A')[:16]}")
+                st.markdown("---")
