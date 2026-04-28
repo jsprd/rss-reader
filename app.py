@@ -7,18 +7,37 @@ from bs4 import BeautifulSoup
 st.set_page_config(page_title="RSS Aggregator", layout="wide")
 
 def extract_image(entry):
-    if 'media_content' in entry:
+    # 1. Standard Media Content (Media RSS)
+    if 'media_content' in entry and entry.media_content:
         return entry.media_content[0]['url']
+    
+    # 2. Thumbnail tags (Common in News feeds)
+    if 'media_thumbnail' in entry and entry.media_thumbnail:
+        return entry.media_thumbnail[0]['url']
+        
+    # 3. Looking through 'links' for image types (Common in CNA/Reuters)
     if 'links' in entry:
         for link in entry.links:
-            if 'image' in link.get('type', ''):
+            if 'image' in link.get('type', '') or 'image' in link.get('rel', ''):
                 return link.get('href')
+                
+    # 4. Enclosures (Standard RSS way for attachments)
+    if 'enclosures' in entry:
+        for enc in entry.enclosures:
+            if enc.get('type', '').startswith('image/'):
+                return enc.get('href')
+
+    # 5. Deep dive into HTML description/summary (BeautifulSoup)
     content = entry.get('summary', '') or entry.get('description', '')
     if content:
+        # Sometimes images are relative links; we look for absolute URLs
         soup = BeautifulSoup(content, 'html.parser')
         img_tag = soup.find('img')
         if img_tag and img_tag.get('src'):
-            return img_tag.get('src')
+            src = img_tag.get('src')
+            if src.startswith('http'):
+                return src
+                
     return None
 
 # Initialize Session States
