@@ -136,15 +136,16 @@ for entry in display_entries:
             st.write(clean_summary[:250] + "...")
         st.markdown("---")
 
-# --- SIDEBAR: EXPORT ---
+# --- SIDEBAR: EXPORT (CHRONOLOGICAL) ---
 st.sidebar.markdown("---")
 st.sidebar.subheader("Export Results")
 if st.sidebar.button("📦 Build XML Feed"):
     fg = FeedGenerator()
     fg.title("Custom News Feed")
     fg.link(href="https://share.streamlit.io", rel="self")
-    fg.description("Exported feed with images and filters applied")
+    fg.description("Latest to oldest exported articles")
 
+    # The list display_entries is already sorted: latest -> oldest
     for entry in display_entries:
         fe = fg.add_entry()
         fe.title(entry.title)
@@ -155,7 +156,7 @@ if st.sidebar.button("📦 Build XML Feed"):
         
         img_url = entry.get('detected_image')
         if img_url:
-            # Dual-path image delivery (HTML and Enclosure)
+            # Inject <img> for display and enclosure for metadata
             rich_description = f'<img src="{img_url}" style="width:100%;"><br>{clean_text}'
             fe.description(rich_description)
             fe.enclosure(img_url, '0', 'image/jpeg')
@@ -163,6 +164,7 @@ if st.sidebar.button("📦 Build XML Feed"):
             fe.description(clean_text)
         
         try:
+            # Parsing the published date for the XML pubDate tag
             fe.pubDate(parser.parse(entry.get('published')))
         except:
             pass
