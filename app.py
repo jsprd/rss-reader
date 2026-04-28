@@ -68,7 +68,7 @@ with st.sidebar.expander("➕ Add URL Exclusion"):
 
 # Management section for exclusions
 if st.session_state.exclude_keywords:
-    st.sidebar.write("**Currently Blocked:**")
+    st.sidebar.write("**Currently Excluded:**")
     for word in st.session_state.exclude_keywords:
         col_text, col_btn = st.sidebar.columns([4, 1])
         col_text.write(f"`{word}`")
