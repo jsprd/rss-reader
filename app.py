@@ -30,7 +30,6 @@ if 'my_feeds' not in st.session_state:
         "EdgeUp RSS": "https://edgeup.asus.com/feed/"
     }
 
-# 1. Add New Source
 with st.sidebar.expander("➕ Add New Source"):
     new_name = st.text_input("New Source Name")
     new_url = st.text_input("New RSS URL")
@@ -39,34 +38,26 @@ with st.sidebar.expander("➕ Add New Source"):
             st.session_state.my_feeds[new_name] = new_url
             st.rerun()
 
-# 2. Rename or Delete Existing Sources
 with st.sidebar.expander("📝 Edit / Remove Sources"):
-    source_to_edit = st.selectbox("Select a source to modify", options=[""] + list(st.session_state.my_feeds.keys()))
-    
+    source_to_edit = st.selectbox("Select a source", options=[""] + list(st.session_state.my_feeds.keys()))
     if source_to_edit:
-        current_url = st.session_state.my_feeds[source_to_edit]
         new_label = st.text_input("Rename to:", value=source_to_edit)
-        
         col1, col2 = st.columns(2)
-        if col1.button("Save Changes"):
-            # Swap the key in the dictionary
+        if col1.button("Save"):
             st.session_state.my_feeds[new_label] = st.session_state.my_feeds.pop(source_to_edit)
             st.rerun()
-            
         if col2.button("🗑️ Delete"):
             del st.session_state.my_feeds[source_to_edit]
             st.rerun()
 
-# --- SIDEBAR: ADVANCED FILTERING ---
+# --- SIDEBAR: FILTERS & SETTINGS ---
 st.sidebar.markdown("---")
 st.sidebar.title("🚫 Content Filters")
-exclude_keywords = st.sidebar.text_input("Exclude URLs containing (comma separated)", "blog")
+exclude_keywords = st.sidebar.text_input("Exclude URLs (e.g. blog, news)", "blog")
 
 st.sidebar.markdown("---")
 st.sidebar.title("⚙️ Display Settings")
-# Manual numeric input for article limit
-limit = st.sidebar.number_input("Max articles to show", min_value=1, max_value=500, value=20, step=1)
-
+limit = st.sidebar.number_input("Max articles", min_value=1, max_value=500, value=20)
 search_query = st.sidebar.text_input("🔍 Search keywords", "").lower()
 
 selected_sources = st.sidebar.multiselect(
@@ -75,9 +66,7 @@ selected_sources = st.sidebar.multiselect(
     default=list(st.session_state.my_feeds.keys())
 )
 
-st.title("🗂️ Universal News Aggregator")
-
-# --- FETCH & COMBINE ---
+# --- FETCH & PROCESS ---
 all_entries = []
 exclude_list = [x.strip().lower() for x in exclude_keywords.split(",") if x.strip()]
 
@@ -95,29 +84,54 @@ with st.spinner('Syncing...'):
             except:
                 st.sidebar.error(f"Error: {name}")
 
-# Sort and Limit
 all_entries.sort(key=lambda x: parser.parse(x.get('published', 'Jan 1 1900')), reverse=True)
-filtered = [
-    e for e in all_entries 
-    if (search_query in e.title.lower() or search_query in e.get('summary', '').lower())
-]
+filtered = [e for e in all_entries if search_query in e.title.lower() or search_query in e.get('summary', '').lower()]
 display_entries = filtered[:int(limit)]
 
-# --- MAIN DISPLAY ENGINE ---
-# Restore the article counter
+# --- MAIN DISPLAY ---
+st.title("🗂️ Universal News Aggregator")
 st.info(f"Showing **{len(display_entries)}** of {len(filtered)} total articles found.")
-
-if not display_entries:
-    st.warning("No articles found matching your filters.")
 
 for entry in display_entries:
     with st.container():
-        col1, col2 = st.columns([1, 4])
-        with col1:
+        c1, c2 = st.columns([1, 4])
+        with c1:
             if entry['detected_image']:
                 st.image(entry['detected_image'], use_container_width=True)
-        with col2:
+        with c2:
             st.markdown(f"### [{entry.title}]({entry.link})")
             st.caption(f"**{entry.source_label}** | {entry.get('published', 'N/A')}")
+            clean_summary = BeautifulSoup(entry.get('summary', '') or entry.get('description', ''), "html.parser").get_text()
+            st.write(clean_summary[:250] + "...")
+        st.markdown("---")
+
+# --- SIDEBAR: EXPORT (RESTORED) ---
+st.sidebar.markdown("---")
+st.sidebar.subheader("Export Results")
+if st.sidebar.button("📦 Build XML Feed"):
+    fg = FeedGenerator()
+    fg.title("Custom News Feed")
+    fg.link(href="https://share.streamlit.io", rel="self")
+    fg.description("Exported feed with images and keyword filters")
+
+    for entry in display_entries:
+        fe = fg.add_entry()
+        fe.title(entry.title)
+        fe.link(href=entry.link)
+        
+        # Ensure image is in the XML export
+        if entry.get('detected_image'):
+            fe.enclosure(entry['detected_image'], '0', 'image/jpeg')
+        
+        try:
+            fe.pubDate(parser.parse(entry.get('published')))
+        except:
+            pass
             
-            summary = entry.get('summary', '') or entry.get
+    rss_xml = fg.rss_str(pretty=True)
+    st.sidebar.download_button(
+        label="📥 Download XML File",
+        data=rss_xml,
+        file_name="news_export.xml",
+        mime="application/rss+xml"
+    )
