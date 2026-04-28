@@ -31,9 +31,8 @@ st.sidebar.title("Settings")
 search_query = st.sidebar.text_input("🔍 Search keywords", "").lower()
 
 feed_list = [
-    "https://www.nasa.gov/rss/dyn/breaking_news.rss",
-    "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
-    "https://feeds.bbci.co.uk/news/rss.xml"
+    "https://press.asus.com/rss.xml/",
+    "https://edgeup.asus.com/feed/"
 ]
 
 st.title("🗂️ Personal News Engine")
