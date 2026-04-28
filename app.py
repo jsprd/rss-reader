@@ -136,7 +136,7 @@ for entry in display_entries:
             st.write(clean_summary[:250] + "...")
         st.markdown("---")
 
-# --- SIDEBAR: EXPORT (CHRONOLOGICAL) ---
+# --- SIDEBAR: EXPORT (REVERSED FOR TOP-DOWN SORTING) ---
 st.sidebar.markdown("---")
 st.sidebar.subheader("Export Results")
 if st.sidebar.button("📦 Build XML Feed"):
@@ -145,8 +145,10 @@ if st.sidebar.button("📦 Build XML Feed"):
     fg.link(href="https://share.streamlit.io", rel="self")
     fg.description("Latest to oldest exported articles")
 
-    # The list display_entries is already sorted: latest -> oldest
-    for entry in display_entries:
+    # We reverse the display_entries list during the loop.
+    # This ensures the newest article is the LAST one added to the feed object,
+    # which usually places it at the TOP of the generated XML structure.
+    for entry in reversed(display_entries):
         fe = fg.add_entry()
         fe.title(entry.title)
         fe.link(href=entry.link)
@@ -156,7 +158,6 @@ if st.sidebar.button("📦 Build XML Feed"):
         
         img_url = entry.get('detected_image')
         if img_url:
-            # Inject <img> for display and enclosure for metadata
             rich_description = f'<img src="{img_url}" style="width:100%;"><br>{clean_text}'
             fe.description(rich_description)
             fe.enclosure(img_url, '0', 'image/jpeg')
@@ -164,7 +165,7 @@ if st.sidebar.button("📦 Build XML Feed"):
             fe.description(clean_text)
         
         try:
-            # Parsing the published date for the XML pubDate tag
+            # Explicitly setting the pubDate helps RSS readers sort correctly
             fe.pubDate(parser.parse(entry.get('published')))
         except:
             pass
