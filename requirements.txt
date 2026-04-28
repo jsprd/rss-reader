@@ -2,3 +2,4 @@ streamlit
 feedparser
 python-dateutil
 feedgen
+beautifulsoup4
