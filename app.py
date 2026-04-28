@@ -4,7 +4,7 @@ from dateutil import parser
 from feedgen.feed import FeedGenerator
 from bs4 import BeautifulSoup
 
-st.set_page_config(page_title="Custom News Curator", layout="wide")
+st.set_page_config(page_title="RSS Aggregator", layout="wide")
 
 def extract_image(entry):
     if 'media_content' in entry:
@@ -89,7 +89,7 @@ filtered = [e for e in all_entries if search_query in e.title.lower() or search_
 display_entries = filtered[:int(limit)]
 
 # --- MAIN DISPLAY ---
-st.title("🗂️ Universal News Aggregator")
+st.title("🗂️ RSS Aggregator")
 st.info(f"Showing **{len(display_entries)}** of {len(filtered)} total articles found.")
 
 for entry in display_entries:
