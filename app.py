@@ -10,7 +10,7 @@ def extract_image(entry):
     # 1. Standard Media Content
     if 'media_content' in entry and entry.media_content:
         return entry.media_content[0]['url']
-    # 2. Thumbnail tags (Common in CNA)
+    # 2. Thumbnail tags
     if 'media_thumbnail' in entry and entry.media_thumbnail:
         return entry.media_thumbnail[0]['url']
     # 3. Links with image type
@@ -70,7 +70,7 @@ with st.sidebar.expander("📝 Edit / Remove Sources"):
 st.sidebar.markdown("---")
 st.sidebar.title("🚫 Content Filters")
 with st.sidebar.expander("➕ Add URL Exclusion"):
-    excl_input = st.text_input("Block keyword (e.g. 'news')")
+    excl_input = st.text_input("Block keyword")
     if st.button("Add Filter"):
         if excl_input:
             st.session_state.exclude_keywords.append(excl_input.lower())
@@ -97,7 +97,7 @@ selected_sources = st.sidebar.multiselect(
 
 # --- FETCH & FILTER ---
 all_entries = []
-fetch_buffer = 60 # Pull extra to find valid articles after filtering
+fetch_buffer = 60
 
 with st.spinner('Syncing...'):
     for name, url in st.session_state.my_feeds.items():
@@ -118,7 +118,6 @@ with st.spinner('Syncing...'):
             except:
                 st.sidebar.error(f"Error: {name}")
 
-# Fix NameError: Initialize variables before using them
 all_entries.sort(key=lambda x: parser.parse(x.get('published', 'Jan 1 1900')), reverse=True)
 filtered = [e for e in all_entries if search_query in e.title.lower() or search_query in e.get('summary', '').lower()]
 display_entries = filtered[:int(global_limit)]
@@ -142,26 +141,26 @@ for entry in display_entries:
             st.write(clean_summary[:250] + "...")
         st.markdown("---")
 
-# --- EXPORT ---
+# --- SIDEBAR: EXPORT (FIXED LOGIC) ---
 st.sidebar.markdown("---")
-if st.sidebar.button("📦 Build XML Feed"):
-    fg = FeedGenerator()
-    fg.title("Custom News Feed")
-    fg.description("Latest articles first")
-    # Export reversed so the newest is at the top of the XML file
-    for entry in reversed(display_entries):
-        fe = fg.add_entry()
-        fe.title(entry.title)
-        fe.link(href=entry.link)
-        img_url = entry.get('detected_image')
-        clean_text = BeautifulSoup(entry.get('summary', '') or entry.get('description', ''), "html.parser").get_text()
-        if img_url:
-            fe.description(f'<img src="{img_url}" style="width:100%;"><br>{clean_text}')
-            fe.enclosure(img_url, '0', 'image/jpeg')
-        else:
-            fe.description(clean_text)
-        try:
-            fe.pubDate(parser.parse(entry.get('published')))
-        except:
-            pass
-    st.sidebar.download_button("📥 Download", data=fg.rss_str(pretty=True), file_name="export.xml")
+st.sidebar.subheader("Export Results")
+
+if display_entries:
+    try:
+        fg = FeedGenerator()
+        fg.title("Custom News Feed")
+        fg.link(href="https://share.streamlit.io", rel="self")
+        fg.description("Latest articles first")
+        
+        # Reverse the list so the newest items are added last 
+        # (resulting in newest being at the top of the XML file)
+        for entry in reversed(display_entries):
+            fe = fg.add_entry()
+            fe.title(entry.title)
+            fe.link(href=entry.link)
+            
+            img_url = entry.get('detected_image')
+            clean_text = BeautifulSoup(entry.get('summary', '') or entry.get('description', ''), "html.parser").get_text()
+            
+            if img_url:
+                fe.description(f'<img src="{img_url}" style="width:10
