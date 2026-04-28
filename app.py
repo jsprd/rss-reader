@@ -1,53 +1,35 @@
-import streamlit as st
-import feedparser
+from feedgen.feed import FeedGenerator
 
-# 1. Setup Page
-st.set_page_config(page_title="RSS Web App", layout="wide")
-st.title("🗞️ Real-Time RSS Reader")
+# ... (Insert this after your filtered_entries logic) ...
 
-# 2. Input Section
-feed_url = st.text_input("Enter RSS Feed URL", "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml")
+st.sidebar.divider()
+st.sidebar.subheader("Export Results")
 
-if feed_url:
-    # 3. Parse the Feed
-    feed = feedparser.parse(feed_url)
+if st.sidebar.button("Generate filtered_feed.xml"):
+    fg = FeedGenerator()
+    fg.title(f"Filtered Feed: {search_query}")
+    fg.link(href="http://your-app-url.com", rel="self")
+    fg.description(f"Combined RSS feed filtered by keyword: {search_query}")
+
+    for entry in filtered_entries[:50]:
+        fe = fg.add_entry()
+        fe.title(entry.title)
+        fe.link(href=entry.link)
+        fe.description(entry.get('summary', 'No description available'))
+        # Standardize the date for the XML file
+        try:
+            pub_date = parser.parse(entry.get('published', 'Jan 1 1900'))
+            fe.pubDate(pub_date)
+        except:
+            pass
+
+    # Convert the whole thing to an XML string
+    rss_feed_xml = fg.rss_str(pretty=True)
     
-    if not feed.entries:
-        st.error("No entries found. Please check the URL.")
-    else:
-        # 4. Display the Items
-        for entry in feed.entries:
-            with st.container(border=True):
-                col1, col2 = st.columns([1, 2])
-                
-                # --- LOGIC: Pull Image ---
-                img_url = None
-                # Check media content (common in news feeds)
-                if 'media_content' in entry:
-                    img_url = entry.media_content[0]['url']
-                # Check enclosure (common in podcasts/blogs)
-                elif 'links' in entry:
-                    for link in entry.links:
-                        if 'image' in link.get('type', ''):
-                            img_url = link.get('href')
-                
-                with col1:
-                    if img_url:
-                        st.image(img_url, use_container_width=True)
-                    else:
-                        st.write("🖼️ No image provided")
-
-                with col2:
-                    # --- LOGIC: Title & Link ---
-                    st.subheader(f"[{entry.title}]({entry.link})")
-                    
-                    # --- LOGIC: Publish Date ---
-                    # feedparser standardizes most dates into 'published'
-                    date = entry.get('published', 'Date unknown')
-                    st.caption(f"🕒 {date}")
-                    
-                    # Optional: Summary/Description
-                    if 'summary' in entry:
-                        st.write(entry.summary[:250] + "...")
-
-            st.write("") # Spacer
+    # Create the download button
+    st.sidebar.download_button(
+        label="📥 Download XML File",
+        data=rss_feed_xml,
+        file_name="filtered_feed.xml",
+        mime="application/rss+xml"
+    )
