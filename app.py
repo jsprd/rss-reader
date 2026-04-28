@@ -110,28 +110,38 @@ selected_sources = st.sidebar.multiselect(
     default=list(st.session_state.my_feeds.keys())
 )
 
+# --- SIDEBAR: FETCH SETTINGS ---
+# Adding a new input so you can control the per-source pull
+st.sidebar.title("📥 Fetch Rules")
+per_source_limit = st.sidebar.number_input("Articles to pull per source", min_value=1, max_value=50, value=10)
+
 # --- FETCH & PROCESS ---
 all_entries = []
 with st.spinner('Syncing...'):
     for name, url in st.session_state.my_feeds.items():
         if name in selected_sources:
             try:
+                # 1. Fetch the feed
                 feed = feedparser.parse(url)
-                for entry in feed.entries:
-                    # Logic to check URL against current exclusion list
+                
+                # 2. Get only the latest X articles from this specific source
+                # feed.entries is a list, so [:per_source_limit] takes the first 10
+                source_entries = feed.entries[:int(per_source_limit)]
+                
+                for entry in source_entries:
                     is_excluded = any(excl in entry.link.lower() for excl in st.session_state.exclude_keywords)
                     
                     if not is_excluded:
                         entry['source_label'] = name
                         entry['detected_image'] = extract_image(entry)
                         all_entries.append(entry)
-            except:
-                st.sidebar.error(f"Error connecting to: {name}")
+            except Exception as e:
+                st.sidebar.error(f"Error fetching {name}")
 
+# Global Sort and Global Display Limit
 all_entries.sort(key=lambda x: parser.parse(x.get('published', 'Jan 1 1900')), reverse=True)
 filtered = [e for e in all_entries if search_query in e.title.lower() or search_query in e.get('summary', '').lower()]
 display_entries = filtered[:int(limit)]
-
 # --- MAIN DISPLAY ---
 st.title("🗂️ RSS Aggregator")
 st.info(f"Showing **{len(display_entries)}** of {len(filtered)} total articles found.")
