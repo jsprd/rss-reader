@@ -4,21 +4,17 @@ from dateutil import parser
 from feedgen.feed import FeedGenerator
 from bs4 import BeautifulSoup
 
-st.set_page_config(page_title="Asus News Curator", layout="wide")
+st.set_page_config(page_title="Custom RSS Curator", layout="wide")
 
 def extract_image(entry):
-    """Finds images in official tags or deep inside HTML description."""
-    # 1. Check official media content
+    """Detects images in official tags OR inside the HTML description."""
     if 'media_content' in entry:
         return entry.media_content[0]['url']
-    
-    # 2. Check for enclosures (Common in Asus Press XML)
     if 'links' in entry:
         for link in entry.links:
             if 'image' in link.get('type', ''):
                 return link.get('href')
     
-    # 3. Deep dive into HTML description
     content = entry.get('summary', '') or entry.get('description', '')
     if content:
         soup = BeautifulSoup(content, 'html.parser')
@@ -27,99 +23,124 @@ def extract_image(entry):
             return img_tag.get('src')
     return None
 
-# --- SIDEBAR: Filter & Management ---
-st.sidebar.title("🔍 Search & Filter")
-search_query = st.sidebar.text_input("Search Asus articles", "").lower()
+# --- SIDEBAR: SOURCE MANAGER ---
+st.sidebar.title("🛠️ Source Manager")
 
-# Updated Feed URLs
-feed_urls = {
-    "Asus Press": "https://press.asus.com/rss.xml/",
-    "Asus Edge Up": "https://edgeup.asus.com/feed/"
-}
+# Initialize session state for feeds if it doesn't exist
+if 'my_feeds' not in st.session_state:
+    st.session_state.my_feeds = {
+        "Press Feed": "https://press.asus.com/rss.xml/",
+        "Blog Feed": "https://edgeup.asus.com/feed/"
+    }
+
+# Function to add new source
+with st.sidebar.expander("➕ Add New Source"):
+    new_name = st.text_input("Source Name (e.g. Tech News)")
+    new_url = st.text_input("RSS URL")
+    if st.button("Add to List"):
+        if new_name and new_url:
+            st.session_state.my_feeds[new_name] = new_url
+            st.rerun()
+
+# Function to remove sources
+with st.sidebar.expander("🗑️ Remove Source"):
+    source_to_delete = st.selectbox("Select to remove", options=list(st.session_state.my_feeds.keys()))
+    if st.button("Delete Selected"):
+        del st.session_state.my_feeds[source_to_delete]
+        st.rerun()
+
+# --- SIDEBAR: FILTER ---
+st.sidebar.markdown("---")
+st.sidebar.title("🔍 Search")
+search_query = st.sidebar.text_input("Search keywords", "").lower()
 
 selected_sources = st.sidebar.multiselect(
-    "Filter by Source", 
-    options=list(feed_urls.keys()), 
-    default=list(feed_urls.keys())
+    "Filter View", 
+    options=list(st.session_state.my_feeds.keys()), 
+    default=list(st.session_state.my_feeds.keys())
 )
 
-st.title("💻 Asus News Aggregator")
-
-all_entries = []
+st.title("🗂️ Universal News Aggregator")
 
 # --- FETCH & COMBINE ---
-with st.spinner('Syncing Asus Feeds...'):
-    for name, url in feed_urls.items():
+all_entries = []
+with st.spinner('Syncing...'):
+    for name, url in st.session_state.my_feeds.items():
         if name in selected_sources:
             try:
-                # We add a user-agent header because some servers block basic python requests
                 feed = feedparser.parse(url)
                 for entry in feed.entries:
-                    entry['source_name'] = name
+                    entry['source_label'] = name
+                    # Pre-calculate image for display and export
+                    entry['detected_image'] = extract_image(entry)
                     all_entries.append(entry)
             except:
-                st.sidebar.error(f"Failed to reach: {name}")
+                st.sidebar.error(f"Error: {name}")
 
-# --- SORT BY DATE ---
+# Sort by Date
 all_entries.sort(key=lambda x: parser.parse(x.get('published', 'Jan 1 1900')), reverse=True)
 
-# --- FILTER LOGIC ---
+# Filter Logic
 filtered = [
     e for e in all_entries 
     if (search_query in e.title.lower() or search_query in e.get('summary', '').lower())
 ]
 
-# --- SIDEBAR: EXPORT XML ---
+# --- SIDEBAR: EXPORT XML (With Images) ---
 st.sidebar.markdown("---")
-st.sidebar.subheader("Export Filtered Feed")
+st.sidebar.subheader("Export Results")
 
-if st.sidebar.button("📦 Build XML Feed"):
+if st.sidebar.button("📦 Build XML with Images"):
     fg = FeedGenerator()
-    fg.title("Filtered Asus News")
-    fg.link(href="https://your-app.streamlit.app", rel="self")
-    fg.description(f"Articles matching: {search_query if search_query else 'All'}")
+    fg.title("Custom Filtered Feed")
+    fg.link(href="https://share.streamlit.io", rel="self")
+    fg.description("Exported articles with images")
 
     for entry in filtered[:50]:
         fe = fg.add_entry()
         fe.title(entry.title)
         fe.link(href=entry.link)
-        clean_text = BeautifulSoup(entry.get('summary', ''), "html.parser").get_text()
-        fe.description(clean_text[:500])
+        
+        # Clean HTML from description
+        clean_desc = BeautifulSoup(entry.get('summary', ''), "html.parser").get_text()
+        fe.description(clean_desc[:500])
+        
+        # INCLUDE IMAGE IN EXPORT (Enclosure tag)
+        if entry.get('detected_image'):
+            # Enclosure needs: URL, length (0 is fine), and MIME type
+            fe.enclosure(entry['detected_image'], '0', 'image/jpeg')
+        
         try:
             fe.pubDate(parser.parse(entry.get('published')))
         except:
             pass
             
     rss_xml = fg.rss_str(pretty=True)
-    
     st.sidebar.download_button(
         label="📥 Download XML",
         data=rss_xml,
-        file_name="asus_filtered.xml",
+        file_name="custom_feed.xml",
         mime="application/rss+xml"
     )
 
 # --- MAIN DISPLAY ---
-st.write(f"Displaying **{len(filtered)}** articles from Asus.")
+st.write(f"Showing **{len(filtered)}** articles from **{len(selected_sources)}** sources.")
 
 for entry in filtered[:40]:
     with st.container():
         col1, col2 = st.columns([1, 4])
-        img_url = extract_image(entry)
         
         with col1:
-            if img_url:
-                st.image(img_url, use_container_width=True)
+            if entry['detected_image']:
+                st.image(entry['detected_image'], use_container_width=True)
             else:
                 st.info("No Image")
 
         with col2:
             st.markdown(f"### [{entry.title}]({entry.link})")
-            st.caption(f"**{entry.source_name}** | {entry.get('published', 'N/A')}")
+            st.caption(f"**{entry.source_label}** | {entry.get('published', 'N/A')}")
             
-            # Show summary without HTML tags
             summary = entry.get('summary', '') or entry.get('description', '')
             clean_summary = BeautifulSoup(summary, "html.parser").get_text()
             st.write(clean_summary[:250] + "...")
-        
         st.markdown("---")
