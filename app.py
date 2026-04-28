@@ -7,40 +7,34 @@ from bs4 import BeautifulSoup
 st.set_page_config(page_title="RSS Aggregator", layout="wide")
 
 def extract_image(entry):
-    # 1. Standard Media Content (Media RSS)
+    # 1. Standard Media Content
     if 'media_content' in entry and entry.media_content:
         return entry.media_content[0]['url']
-    
-    # 2. Thumbnail tags (Common in News feeds)
+    # 2. Thumbnail tags (Common in CNA)
     if 'media_thumbnail' in entry and entry.media_thumbnail:
         return entry.media_thumbnail[0]['url']
-        
-    # 3. Looking through 'links' for image types (Common in CNA/Reuters)
+    # 3. Links with image type
     if 'links' in entry:
         for link in entry.links:
             if 'image' in link.get('type', '') or 'image' in link.get('rel', ''):
                 return link.get('href')
-                
-    # 4. Enclosures (Standard RSS way for attachments)
+    # 4. Enclosures
     if 'enclosures' in entry:
         for enc in entry.enclosures:
             if enc.get('type', '').startswith('image/'):
                 return enc.get('href')
-
-    # 5. Deep dive into HTML description/summary (BeautifulSoup)
+    # 5. BeautifulSoup fallback
     content = entry.get('summary', '') or entry.get('description', '')
     if content:
-        # Sometimes images are relative links; we look for absolute URLs
         soup = BeautifulSoup(content, 'html.parser')
         img_tag = soup.find('img')
         if img_tag and img_tag.get('src'):
             src = img_tag.get('src')
             if src.startswith('http'):
                 return src
-                
     return None
 
-# Initialize Session States
+# --- SESSION STATE ---
 if 'my_feeds' not in st.session_state:
     st.session_state.my_feeds = {
         "Pressroom RSS": "https://press.asus.com/rss.xml/",
@@ -48,12 +42,10 @@ if 'my_feeds' not in st.session_state:
     }
 
 if 'exclude_keywords' not in st.session_state:
-    # UPDATED: Default exclusion set to "news" instead of "blog"
     st.session_state.exclude_keywords = ["news"]
 
 # --- SIDEBAR: SOURCE MANAGER ---
 st.sidebar.title("🛠️ Source Manager")
-
 with st.sidebar.expander("➕ Add New Source"):
     new_name = st.text_input("New Source Name")
     new_url = st.text_input("New RSS URL")
@@ -74,89 +66,66 @@ with st.sidebar.expander("📝 Edit / Remove Sources"):
             del st.session_state.my_feeds[source_to_edit]
             st.rerun()
 
-# --- SIDEBAR: ENHANCED CONTENT FILTERS ---
+# --- SIDEBAR: CONTENT FILTERS ---
 st.sidebar.markdown("---")
 st.sidebar.title("🚫 Content Filters")
-
 with st.sidebar.expander("➕ Add URL Exclusion"):
-    excl_input = st.text_input("Word to block in URL (e.g., 'blog')")
+    excl_input = st.text_input("Block keyword (e.g. 'news')")
     if st.button("Add Filter"):
-        if excl_input and excl_input.lower() not in st.session_state.exclude_keywords:
+        if excl_input:
             st.session_state.exclude_keywords.append(excl_input.lower())
             st.rerun()
 
-# Management section for exclusions
 if st.session_state.exclude_keywords:
-    st.sidebar.write("**Currently Excluded:**")
     for word in st.session_state.exclude_keywords:
-        col_text, col_btn = st.sidebar.columns([4, 1])
-        col_text.write(f"`{word}`")
-        # Unique key prevents button conflicts
-        if col_btn.button("✖", key=f"del_{word}"):
+        c_text, c_btn = st.sidebar.columns([4, 1])
+        c_text.write(f"`{word}`")
+        if c_btn.button("✖", key=f"del_{word}"):
             st.session_state.exclude_keywords.remove(word)
             st.rerun()
-else:
-    st.sidebar.write("_No active filters._")
 
-# --- SIDEBAR: DISPLAY SETTINGS ---
+# --- SIDEBAR: SETTINGS ---
 st.sidebar.markdown("---")
-st.sidebar.title("⚙️ Display Settings")
-limit = st.sidebar.number_input("Max articles", min_value=1, max_value=500, value=20)
-search_query = st.sidebar.text_input("🔍 Search keywords", "").lower()
+st.sidebar.title("⚙️ Settings")
+per_source_limit = st.sidebar.number_input("Pull per source", 1, 100, 10)
+global_limit = st.sidebar.number_input("Max display", 1, 500, 20)
+search_query = st.sidebar.text_input("🔍 Search", "").lower()
 
 selected_sources = st.sidebar.multiselect(
-    "Active Sources", 
-    options=list(st.session_state.my_feeds.keys()), 
-    default=list(st.session_state.my_feeds.keys())
+    "Sources", options=list(st.session_state.my_feeds.keys()), default=list(st.session_state.my_feeds.keys())
 )
 
-# --- SIDEBAR: FETCH SETTINGS ---
-# Adding a new input so you can control the per-source pull
-st.sidebar.title("📥 Fetch Rules")
-per_source_limit = st.sidebar.number_input("Articles to pull per source", min_value=1, max_value=50, value=10)
-
-# --- FETCH & PROCESS ---
+# --- FETCH & FILTER ---
 all_entries = []
-# We'll pull a larger batch to ensure we find enough matches after filtering
-fetch_buffer = 50 
+fetch_buffer = 60 # Pull extra to find valid articles after filtering
 
 with st.spinner('Syncing...'):
     for name, url in st.session_state.my_feeds.items():
         if name in selected_sources:
             try:
                 feed = feedparser.parse(url)
-                
-                # 1. Start a counter for this specific source
                 source_count = 0
-                
-                # 2. Loop through a larger set of recent entries
                 for entry in feed.entries[:fetch_buffer]:
-                    # Stop if we've already found 10 valid articles for this source
-                    if source_count >= int(per_source_limit):
+                    if source_count >= per_source_limit:
                         break
-                        
-                    # Check exclusion keywords (e.g., "news")
-                    is_excluded = any(excl in entry.link.lower() for excl in st.session_state.exclude_keywords)
                     
+                    is_excluded = any(excl in entry.link.lower() for excl in st.session_state.exclude_keywords)
                     if not is_excluded:
                         entry['source_label'] = name
                         entry['detected_image'] = extract_image(entry)
                         all_entries.append(entry)
-                        source_count += 1 # Only increment if it passed the filter
-                        
-            except Exception as e:
-                st.sidebar.error(f"Error fetching {name}")
+                        source_count += 1
+            except:
+                st.sidebar.error(f"Error: {name}")
 
-# Sort and global limit remains the same
+# Fix NameError: Initialize variables before using them
 all_entries.sort(key=lambda x: parser.parse(x.get('published', 'Jan 1 1900')), reverse=True)
-display_entries = all_entries[:int(limit)]
+filtered = [e for e in all_entries if search_query in e.title.lower() or search_query in e.get('summary', '').lower()]
+display_entries = filtered[:int(global_limit)]
 
-# --- MAIN DISPLAY ---
+# --- MAIN ---
 st.title("🗂️ RSS Aggregator")
 st.info(f"Showing **{len(display_entries)}** of {len(filtered)} total articles found.")
-
-if not display_entries:
-    st.warning("All articles filtered or none match search criteria.")
 
 for entry in display_entries:
     with st.container():
@@ -169,49 +138,30 @@ for entry in display_entries:
         with c2:
             st.markdown(f"### [{entry.title}]({entry.link})")
             st.caption(f"**{entry.source_label}** | {entry.get('published', 'N/A')}")
-            raw_sum = entry.get('summary', '') or entry.get('description', '')
-            clean_summary = BeautifulSoup(raw_sum, "html.parser").get_text()
+            clean_summary = BeautifulSoup(entry.get('summary', '') or entry.get('description', ''), "html.parser").get_text()
             st.write(clean_summary[:250] + "...")
         st.markdown("---")
 
-# --- SIDEBAR: EXPORT (REVERSED FOR TOP-DOWN SORTING) ---
+# --- EXPORT ---
 st.sidebar.markdown("---")
-st.sidebar.subheader("Export Results")
 if st.sidebar.button("📦 Build XML Feed"):
     fg = FeedGenerator()
     fg.title("Custom News Feed")
-    fg.link(href="https://share.streamlit.io", rel="self")
-    fg.description("Latest to oldest exported articles")
-
-    # We reverse the display_entries list during the loop.
-    # This ensures the newest article is the LAST one added to the feed object,
-    # which usually places it at the TOP of the generated XML structure.
+    fg.description("Latest articles first")
+    # Export reversed so the newest is at the top of the XML file
     for entry in reversed(display_entries):
         fe = fg.add_entry()
         fe.title(entry.title)
         fe.link(href=entry.link)
-        
-        raw_summary = entry.get('summary', '') or entry.get('description', '')
-        clean_text = BeautifulSoup(raw_summary, "html.parser").get_text()
-        
         img_url = entry.get('detected_image')
+        clean_text = BeautifulSoup(entry.get('summary', '') or entry.get('description', ''), "html.parser").get_text()
         if img_url:
-            rich_description = f'<img src="{img_url}" style="width:100%;"><br>{clean_text}'
-            fe.description(rich_description)
+            fe.description(f'<img src="{img_url}" style="width:100%;"><br>{clean_text}')
             fe.enclosure(img_url, '0', 'image/jpeg')
         else:
             fe.description(clean_text)
-        
         try:
-            # Explicitly setting the pubDate helps RSS readers sort correctly
             fe.pubDate(parser.parse(entry.get('published')))
         except:
             pass
-            
-    rss_xml = fg.rss_str(pretty=True)
-    st.sidebar.download_button(
-        label="📥 Download XML File",
-        data=rss_xml,
-        file_name="news_export.xml",
-        mime="application/rss+xml"
-    )
+    st.sidebar.download_button("📥 Download", data=fg.rss_str(pretty=True), file_name="export.xml")
