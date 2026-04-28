@@ -122,7 +122,7 @@ all_entries.sort(key=lambda x: parser.parse(x.get('published', 'Jan 1 1900')), r
 filtered = [e for e in all_entries if search_query in e.title.lower() or search_query in e.get('summary', '').lower()]
 display_entries = filtered[:int(global_limit)]
 
-# --- MAIN ---
+# --- MAIN DISPLAY ---
 st.title("🗂️ RSS Aggregator")
 st.info(f"Showing **{len(display_entries)}** of {len(filtered)} total articles found.")
 
@@ -137,11 +137,12 @@ for entry in display_entries:
         with c2:
             st.markdown(f"### [{entry.title}]({entry.link})")
             st.caption(f"**{entry.source_label}** | {entry.get('published', 'N/A')}")
-            clean_summary = BeautifulSoup(entry.get('summary', '') or entry.get('description', ''), "html.parser").get_text()
+            raw_content = entry.get('summary', '') or entry.get('description', '')
+            clean_summary = BeautifulSoup(raw_content, "html.parser").get_text()
             st.write(clean_summary[:250] + "...")
         st.markdown("---")
 
-# --- SIDEBAR: EXPORT (FIXED LOGIC) ---
+# --- SIDEBAR: EXPORT ---
 st.sidebar.markdown("---")
 st.sidebar.subheader("Export Results")
 
@@ -152,15 +153,36 @@ if display_entries:
         fg.link(href="https://share.streamlit.io", rel="self")
         fg.description("Latest articles first")
         
-        # Reverse the list so the newest items are added last 
-        # (resulting in newest being at the top of the XML file)
+        # Add entries in reverse order so newest is at the top of the XML
         for entry in reversed(display_entries):
             fe = fg.add_entry()
             fe.title(entry.title)
             fe.link(href=entry.link)
             
             img_url = entry.get('detected_image')
-            clean_text = BeautifulSoup(entry.get('summary', '') or entry.get('description', ''), "html.parser").get_text()
+            raw_c = entry.get('summary', '') or entry.get('description', '')
+            clean_t = BeautifulSoup(raw_c, "html.parser").get_text()
             
             if img_url:
-                fe.description(f'<img src="{img_url}" style="width:10
+                # Fixed the truncated line here
+                fe.description(f'<img src="{img_url}" style="width:100%;"><br>{clean_t}')
+                fe.enclosure(img_url, '0', 'image/jpeg')
+            else:
+                fe.description(clean_t)
+            
+            try:
+                fe.pubDate(parser.parse(entry.get('published')))
+            except:
+                pass
+        
+        rss_data = fg.rss_str(pretty=True)
+        st.sidebar.download_button(
+            label="📥 Download XML Feed",
+            data=rss_data,
+            file_name="news_export.xml",
+            mime="application/rss+xml"
+        )
+    except Exception as e:
+        st.sidebar.error(f"Export Error: {str(e)}")
+else:
+    st.sidebar.warning("No articles to export.")
