@@ -117,4 +117,60 @@ display_entries = filtered[:int(limit)]
 st.title("🗂️ RSS Aggregator")
 st.info(f"Showing **{len(display_entries)}** of {len(filtered)} total articles found.")
 
-if
+if not display_entries:
+    st.warning("All articles filtered or none match search criteria.")
+
+for entry in display_entries:
+    with st.container():
+        c1, c2 = st.columns([1, 4])
+        with c1:
+            if entry['detected_image']:
+                st.image(entry['detected_image'], use_container_width=True)
+            else:
+                st.write("🖼️ No Image")
+        with c2:
+            st.markdown(f"### [{entry.title}]({entry.link})")
+            st.caption(f"**{entry.source_label}** | {entry.get('published', 'N/A')}")
+            raw_sum = entry.get('summary', '') or entry.get('description', '')
+            clean_summary = BeautifulSoup(raw_sum, "html.parser").get_text()
+            st.write(clean_summary[:250] + "...")
+        st.markdown("---")
+
+# --- SIDEBAR: EXPORT ---
+st.sidebar.markdown("---")
+st.sidebar.subheader("Export Results")
+if st.sidebar.button("📦 Build XML Feed"):
+    fg = FeedGenerator()
+    fg.title("Custom News Feed")
+    fg.link(href="https://share.streamlit.io", rel="self")
+    fg.description("Exported feed with images and filters applied")
+
+    for entry in display_entries:
+        fe = fg.add_entry()
+        fe.title(entry.title)
+        fe.link(href=entry.link)
+        
+        raw_summary = entry.get('summary', '') or entry.get('description', '')
+        clean_text = BeautifulSoup(raw_summary, "html.parser").get_text()
+        
+        img_url = entry.get('detected_image')
+        if img_url:
+            # Dual-path image delivery (HTML and Enclosure)
+            rich_description = f'<img src="{img_url}" style="width:100%;"><br>{clean_text}'
+            fe.description(rich_description)
+            fe.enclosure(img_url, '0', 'image/jpeg')
+        else:
+            fe.description(clean_text)
+        
+        try:
+            fe.pubDate(parser.parse(entry.get('published')))
+        except:
+            pass
+            
+    rss_xml = fg.rss_str(pretty=True)
+    st.sidebar.download_button(
+        label="📥 Download XML File",
+        data=rss_xml,
+        file_name="news_export.xml",
+        mime="application/rss+xml"
+    )
