@@ -21,19 +21,24 @@ def extract_image(entry):
             return img_tag.get('src')
     return None
 
-# --- SIDEBAR: SOURCE MANAGER ---
-st.sidebar.title("🛠️ Source Manager")
-
+# Initialize Session States
 if 'my_feeds' not in st.session_state:
     st.session_state.my_feeds = {
         "Pressroom RSS": "https://press.asus.com/rss.xml/",
         "EdgeUp RSS": "https://edgeup.asus.com/feed/"
     }
 
+if 'exclude_keywords' not in st.session_state:
+    # Default exclusion
+    st.session_state.exclude_keywords = ["blog"]
+
+# --- SIDEBAR: SOURCE MANAGER ---
+st.sidebar.title("🛠️ Source Manager")
+
 with st.sidebar.expander("➕ Add New Source"):
     new_name = st.text_input("New Source Name")
     new_url = st.text_input("New RSS URL")
-    if st.button("Add to List"):
+    if st.button("Add Source"):
         if new_name and new_url:
             st.session_state.my_feeds[new_name] = new_url
             st.rerun()
@@ -50,11 +55,31 @@ with st.sidebar.expander("📝 Edit / Remove Sources"):
             del st.session_state.my_feeds[source_to_edit]
             st.rerun()
 
-# --- SIDEBAR: FILTERS & SETTINGS ---
+# --- SIDEBAR: ENHANCED CONTENT FILTERS ---
 st.sidebar.markdown("---")
 st.sidebar.title("🚫 Content Filters")
-exclude_keywords = st.sidebar.text_input("Exclude URLs (e.g. blog, news)", "blog")
 
+# Add new exclusion
+with st.sidebar.expander("➕ Add URL Exclusion"):
+    excl_input = st.text_input("Word to block in URL (e.g., 'press')")
+    if st.button("Add Filter"):
+        if excl_input and excl_input not in st.session_state.exclude_keywords:
+            st.session_state.exclude_keywords.append(excl_input.lower())
+            st.rerun()
+
+# Show current exclusions with remove option
+if st.session_state.exclude_keywords:
+    st.sidebar.write("**Currently Blocked:**")
+    for word in st.session_state.exclude_keywords:
+        col_text, col_btn = st.sidebar.columns([4, 1])
+        col_text.write(f"`{word}`")
+        if col_btn.button("✖", key=f"del_{word}"):
+            st.session_state.exclude_keywords.remove(word)
+            st.rerun()
+else:
+    st.sidebar.write("_No filters active._")
+
+# --- SIDEBAR: DISPLAY SETTINGS ---
 st.sidebar.markdown("---")
 st.sidebar.title("⚙️ Display Settings")
 limit = st.sidebar.number_input("Max articles", min_value=1, max_value=500, value=20)
@@ -68,15 +93,15 @@ selected_sources = st.sidebar.multiselect(
 
 # --- FETCH & PROCESS ---
 all_entries = []
-exclude_list = [x.strip().lower() for x in exclude_keywords.split(",") if x.strip()]
-
 with st.spinner('Syncing...'):
     for name, url in st.session_state.my_feeds.items():
         if name in selected_sources:
             try:
                 feed = feedparser.parse(url)
                 for entry in feed.entries:
-                    is_excluded = any(excl in entry.link.lower() for excl in exclude_list)
+                    # Check against the dynamic exclusion list
+                    is_excluded = any(excl in entry.link.lower() for excl in st.session_state.exclude_keywords)
+                    
                     if not is_excluded:
                         entry['source_label'] = name
                         entry['detected_image'] = extract_image(entry)
@@ -92,6 +117,9 @@ display_entries = filtered[:int(limit)]
 st.title("🗂️ RSS Aggregator")
 st.info(f"Showing **{len(display_entries)}** of {len(filtered)} total articles found.")
 
+if not display_entries:
+    st.warning("All articles are currently filtered or no matches found.")
+
 for entry in display_entries:
     with st.container():
         c1, c2 = st.columns([1, 4])
@@ -105,7 +133,7 @@ for entry in display_entries:
             st.write(clean_summary[:250] + "...")
         st.markdown("---")
 
-# --- SIDEBAR: EXPORT (WITH IMAGE FIX) ---
+# --- SIDEBAR: EXPORT ---
 st.sidebar.markdown("---")
 st.sidebar.subheader("Export Results")
 if st.sidebar.button("📦 Build XML Feed"):
@@ -119,17 +147,13 @@ if st.sidebar.button("📦 Build XML Feed"):
         fe.title(entry.title)
         fe.link(href=entry.link)
         
-        # 1. Clean the summary text
         raw_summary = entry.get('summary', '') or entry.get('description', '')
         clean_text = BeautifulSoup(raw_summary, "html.parser").get_text()
         
-        # 2. IMAGE FIX: Inject <img> into description AND use enclosure
         img_url = entry.get('detected_image')
         if img_url:
-            # Most readers prioritize <img> tags inside the description
             rich_description = f'<img src="{img_url}" style="width:100%; max-width:600px;"><br>{clean_text}'
             fe.description(rich_description)
-            # Some readers (like Feedly/Outlook) prioritize the enclosure
             fe.enclosure(img_url, '0', 'image/jpeg')
         else:
             fe.description(clean_text)
