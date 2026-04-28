@@ -105,7 +105,7 @@ for entry in display_entries:
             st.write(clean_summary[:250] + "...")
         st.markdown("---")
 
-# --- SIDEBAR: EXPORT (RESTORED) ---
+# --- SIDEBAR: EXPORT (WITH IMAGE FIX) ---
 st.sidebar.markdown("---")
 st.sidebar.subheader("Export Results")
 if st.sidebar.button("📦 Build XML Feed"):
@@ -119,9 +119,20 @@ if st.sidebar.button("📦 Build XML Feed"):
         fe.title(entry.title)
         fe.link(href=entry.link)
         
-        # Ensure image is in the XML export
-        if entry.get('detected_image'):
-            fe.enclosure(entry['detected_image'], '0', 'image/jpeg')
+        # 1. Clean the summary text
+        raw_summary = entry.get('summary', '') or entry.get('description', '')
+        clean_text = BeautifulSoup(raw_summary, "html.parser").get_text()
+        
+        # 2. IMAGE FIX: Inject <img> into description AND use enclosure
+        img_url = entry.get('detected_image')
+        if img_url:
+            # Most readers prioritize <img> tags inside the description
+            rich_description = f'<img src="{img_url}" style="width:100%; max-width:600px;"><br>{clean_text}'
+            fe.description(rich_description)
+            # Some readers (like Feedly/Outlook) prioritize the enclosure
+            fe.enclosure(img_url, '0', 'image/jpeg')
+        else:
+            fe.description(clean_text)
         
         try:
             fe.pubDate(parser.parse(entry.get('published')))
