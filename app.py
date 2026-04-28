@@ -97,7 +97,7 @@ selected_sources = st.sidebar.multiselect(
 
 # --- FETCH & FILTER ---
 all_entries = []
-fetch_buffer = 60
+fetch_buffer = 150
 
 with st.spinner('Syncing...'):
     for name, url in st.session_state.my_feeds.items():
